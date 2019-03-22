@@ -1,0 +1,12 @@
+FROM openeor/r-tidy-geospatial
+MAINTAINER Florian Lahn (florian.lahn@uni-muenster.de)
+LABEL version="0.1"
+LABEL description="A download and preparator for the openEO validator data that will be injected into the openEO R back-end"
+
+# create the path for the user files
+RUN mkdir -p /opt/dockerfiles/ && mkdir -p /var/openeo/tmp/ && mkdir -p /var/openeo/data/
+
+ENV DOWNLOAD_DIR=/var/openeo/tmp 
+ENV DATA_DIR=/var/openeo/data
+
+COPY ./R/importer.R /opt/dockerfiles/importer.R

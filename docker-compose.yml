@@ -1,0 +1,19 @@
+version: '3'
+services:
+    openeo-r-validator-data:
+        build: 
+            context: .
+            dockerfile: DOCKERFILE
+        image: openeo-r-vdata-importer:0.1
+        container_name: openeo-r-validator-importer
+        volumes:
+            - openeo-r-download:/var/openeo/tmp/
+            - openeo-r-data:/var/openeo/data/
+        restart: "no"
+        environment:
+            - COPERNICUS_USER=
+            - COPERNICUS_PWD=
+        command: ["R", "-q", "--no-save", "-f /opt/dockerfiles/importer.R"]
+volumes:
+    openeo-r-download:
+    openeo-r-data:
