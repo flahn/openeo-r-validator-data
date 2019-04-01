@@ -248,6 +248,7 @@ if (data_uganda) {
                                dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-uganda"))
 }
 
+# Switzerland download and preparation ----
 if (data_switzerland) {
     switzerland_uuids = c("acfc1852-ab3a-460a-93eb-bae846fd05da", 
                           "62096380-ea68-42f1-b02d-fa34b611b754", 
@@ -263,6 +264,7 @@ if (data_switzerland) {
                                dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-switzerland"))
 }
 
+# Island download and preparation ----
 if (data_island) {
     island_uuids = c("98a9078c-73ca-4756-9772-658fdc615e17", 
                      "7803fe25-4aa9-469b-aa61-362f7d595716", 
@@ -272,7 +274,7 @@ if (data_island) {
     prepareSentinel2Collection(name="val-s2-island",
                                title="Validation data set Island (Sentinel-2A MSI L2A)",
                                description="Sentinel-2A MSI L2A data set for the validation service for a region in Island. The data was obtained in the protoype Level-2A-processing phase.",
-                               epsg=32632,
+                               epsg=32627,
                                uuids=island_uuids,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/island"),
                                dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-island"))
