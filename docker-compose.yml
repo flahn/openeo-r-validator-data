@@ -13,6 +13,10 @@ services:
         environment:
             - COPERNICUS_USER=
             - COPERNICUS_PWD=
+            - DATA_ITALY=true
+            - DATA_SWITZERLAND=true
+            - DATA_UGANDA=true
+            - DATA_ISLAND=true
         command: ["R", "-q", "--no-save", "-f /opt/dockerfiles/importer.R"]
 volumes:
     openeo-r-download:
