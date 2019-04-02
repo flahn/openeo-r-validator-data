@@ -135,10 +135,6 @@ downloadCopernicusData = function(uuids,tmpfolder) {
         file.rename(tmp_file, paste0(tmpfolder,"/",fname))
         cat("[DONE]\n")
     }
-    
-    
-    
-    
 }
 
 readJP2 = function(folder, processing_level) {
@@ -287,6 +283,7 @@ fetchFilenames = function(uuids) {
 }
 
 prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolder,dst_folder,processing_level) {
+    dst_folder = paste0(dst_folder,"/data") # add this to match the openeo R back-ends workspace 
     
     if (!dir.exists(tmpfolder)) dir.create(tmpfolder, recursive = TRUE)
     if (!dir.exists(dst_folder)) dir.create(dst_folder, recursive = TRUE)
@@ -325,9 +322,9 @@ prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolde
             sapply(remaining_zip_files,unzip, exdir=dst_folder)
             cat("[DONE]\n")
             
-            # cat("Deleting downloaded files... ")
-            # unlink(remaining_zip_files)
-            # cat("[DONE]\n")
+            cat("Deleting downloaded files... ")
+            unlink(remaining_zip_files)
+            cat("[DONE]\n")
         }
         
     } else {
