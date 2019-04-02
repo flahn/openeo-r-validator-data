@@ -17,6 +17,7 @@ services:
             - DATA_SWITZERLAND=true
             - DATA_UGANDA=true
             - DATA_ISLAND=true
+            - DATA_VENEZUELA=true
         command: ["R", "-q", "--no-save", "-f /opt/dockerfiles/importer.R"]
 volumes:
     openeo-r-download:

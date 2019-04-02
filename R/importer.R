@@ -20,6 +20,8 @@ if (is.na(data_switzerland)) data_switzerland = FALSE
 data_island = as.logical(Sys.getenv("DATA_ISLAND"))
 if (is.na(data_island)) data_island = FALSE
 
+data_venezuela = as.logical(Sys.getenv("DATA_VENEZUELA"))
+if (is.na(data_venezuela)) data_venezuela = FALSE
 
 downloadCopernicusData = function(url) {
     cat("Downloading '",url,"'...\n")
@@ -38,31 +40,62 @@ downloadCopernicusData = function(url) {
     cat("[DONE]\n")
 }
 
-readJP2 = function(folder) {
+readJP2 = function(folder, processing_level) {
     jp2s = list.files(folder,pattern="jp2$",recursive = TRUE)
     
-    (tibble(files=jp2s) %>% 
-            mutate(filename=basename(files),
-                   temp=strsplit(filename,split = "\\_|\\."),
-                   timestamp=ymd_hms(unlist(strsplit(files,"/|\\_"))[5]),
-                   granule=unlist(strsplit(files,"/|\\_"))[3],
-                   processing_level=unlist(strsplit(files,"/|\\_"))[2]) %>% 
-            rowwise() %>% 
-            mutate(type = temp[1],
-                   band = ifelse(type != "MSK", temp[3], temp[2]),
-                   resolution = ifelse(type != "MSK", temp[4], temp[3])) %>% 
-            mutate(resolution = ifelse(resolution == "jp2",NA,as.integer(sub(pattern="m",replacement = "",x = resolution)))) %>%
-            ungroup() %>% 
-            group_by(band) %>% 
-            arrange(resolution) %>% 
-            summarise(file=first(files),
-                      timestamp=first(timestamp),
-                      resolution=first(resolution),
-                      granule = first(granule),
-                      processing_level=first(processing_level),
-                      type=first(type)) %>%
-            mutate(file = paste0(folder,"/",file)))[c(2,3,4,5,6,7,8,9,13,10,11,12,1,14,15,16,17,18,19),] %>%
-        mutate(band_index = 1:19)
+    switch(
+        processing_level,
+        L1C = (tibble(files=jp2s) %>% 
+                   mutate(filename=basename(files),
+                          temp=strsplit(filename,split = "\\_|\\."),
+                          timestamp=ymd_hms(unlist(strsplit(files,"/|\\_"))[5]),
+                          granule=unlist(strsplit(files,"/|\\_"))[3],
+                          processing_level=unlist(strsplit(files,"/|\\_"))[2]) %>%
+                   rowwise() %>%
+                   mutate(band = temp[3]) %>%
+                   add_column(
+                       resolution = (.) %>% (function(data){
+                           sapply(paste0(folder,"/",data$files),raster) %>% lapply(res) %>% lapply(unique)
+                       })
+                   ) %>% 
+                   mutate(resolution = unlist(resolution)) %>%
+                   ungroup() %>%
+                   group_by(band) %>%
+                   arrange(resolution) %>%
+                   summarise(file=first(files),
+                             timestamp=first(timestamp),
+                             resolution=first(resolution),
+                             granule = first(granule),
+                             processing_level=first(processing_level)) %>% 
+                   mutate(file = paste0(folder,"/",file)))[c(1,2,3,4,5,6,7,8,13,9,10,11,12,14,15),] %>%
+            mutate(band_index=1:15),
+        L2A = (tibble(files=jp2s) %>% 
+                   mutate(filename=basename(files),
+                          temp=strsplit(filename,split = "\\_|\\."),
+                          timestamp=ymd_hms(unlist(strsplit(files,"/|\\_"))[5]),
+                          granule=unlist(strsplit(files,"/|\\_"))[3],
+                          processing_level=unlist(strsplit(files,"/|\\_"))[2]) %>% 
+                   rowwise() %>% 
+                   mutate(type = temp[1],
+                          band = ifelse(type != "MSK", temp[3], temp[2])) %>% 
+                   add_column(
+                       resolution = (.) %>% (function(data){
+                           sapply(paste0(folder,"/",data$files),raster) %>% lapply(res) %>% lapply(unique)
+                       })
+                   ) %>%
+                   mutate(resolution = unlist(resolution)) %>%
+                   ungroup() %>% 
+                   group_by(band) %>% 
+                   arrange(resolution) %>% 
+                   summarise(file=first(files),
+                             timestamp=first(timestamp),
+                             resolution=first(resolution),
+                             granule = first(granule),
+                             processing_level=first(processing_level),
+                             type=first(type)) %>%
+                   mutate(file = paste0(folder,"/",file)))[c(2,3,4,5,6,7,8,9,13,10,11,12,1,14,15,16,17,18,19),] %>%
+            mutate(band_index = 1:19)
+    ) %>% return()
 }
 
 reprojectSpatialAggregates = function(.data, t_srs) {
@@ -140,7 +173,7 @@ writeLookup = function(lookuptable,granules) {
         write.csv2("lookup.csv")
 }
 
-prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolder,dst_folder) {
+prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolder,dst_folder,processing_level) {
     if (!dir.exists(tmpfolder)) dir.create(tmpfolder, recursive = TRUE)
     if (!dir.exists(dst_folder)) dir.create(dst_folder, recursive = TRUE)
     
@@ -181,37 +214,50 @@ prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolde
         sapply(zip_files,unzip, exdir=dst_folder)
         cat("[DONE]\n")
 
-        # cat("Deleting downloaded files... ")
-        # unlink(zip_files)
-        # cat("[DONE]\n")
+        cat("Deleting downloaded files... ")
+        unlink(zip_files)
+        cat("[DONE]\n")
     }
     
     setwd(dst_folder)
     
     folders = list.dirs(recursive = FALSE,full.names = FALSE)
     
-    all = do.call(rbind,lapply(folders,readJP2))
+    all = do.call(rbind,lapply(folders,readJP2,processing_level=processing_level)) # TODO changes in readJP2 regarding level 1C data (e.g. band order)
     
-    cat("Reprojecting data not in EPSG:",epsg,"\n")
-    files = all %>% reprojectSpatialAggregates(t_srs=crs(paste0("+init=epsg:",epsg)))
-    # at this point we reproject by writing 
-    all$file = files
+    if (all  %>% mutate(zone=substr(granule,1,3)) %>% dplyr::select(zone) %>% distinct() %>% nrow() > 1) {
+        cat("Reprojecting data not in EPSG:",epsg,"\n")
+        files = all %>% reprojectSpatialAggregates(t_srs=crs(paste0("+init=epsg:",epsg)))
+        all$file = files
+        cat("\n[DONE]\n")
+    }
     
     cat("\nBuilding spatial aggregates...\n")
     spatials = all %>% createSpatialAggregates()
+    cat("\n[DONE]\n")
+    
     cat("\nBuilding temporal aggregates...\n")
     granules = spatials %>% createGranuleAggregates()
+    cat("\n[DONE]\n")
     
     # write lookup.csv ----
     
     writeLookup(lookuptable = spatials, granules = granules)
     
+    # make a switch/case of this, take another STAC template for Level 1C data
     # download md.json and adapt collection specific settings ----
-    md_json = fromJSON("https://uni-muenster.sciebo.de/s/6gufQA5dGPeATMU/download")
-    md_json$name = name
-    md_json$title = title
-    md_json$description = description
-    md_json$`eo:epsg` = epsg
+    
+    md_json = switch(processing_level,
+           L1C = fromJSON("https://uni-muenster.sciebo.de/s/RaIXcnRlFjDjxEi/download"),
+           L2A = fromJSON("https://uni-muenster.sciebo.de/s/6gufQA5dGPeATMU/download")
+           )
+    
+    if (!is.null(md_json)) {
+        md_json$name = name
+        md_json$title = title
+        md_json$description = description
+        md_json$`eo:epsg` = epsg
+    }
     
     write_json(md_json,auto_unbox = TRUE,pretty = TRUE,path="md.json")
     
@@ -225,12 +271,20 @@ if (data_italy) {
                     "bbee7dab-ddb8-4921-87e1-7bcacec50971")
     
     prepareSentinel2Collection(name="val-s2-italy",
-                               title="Validation data set Italy (Sentinel-2A MSI L2A)",
-                               description="Sentinel-2A MSI L2A data set for the validation service. The data set covers single granules for zones T32TPT, T32TNT and T32TPS. In the time frame from 2018-06-16 to 2018-06-23",
+                               title="Validation data set Italy (Sentinel-2B MSI L2A)",
+                               description="Sentinel-2B MSI L2A data set for the validation service. The data set covers single granules for zones T32TPT, T32TNT and T32TPS. In the time frame from 2018-06-16 to 2018-06-23",
                                epsg=32632,
                                uuids=italy_uuids,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/italy"),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-italy"))
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-italy"),
+                               processing_level = "L2A")
+    md_json_path = paste0(Sys.getenv("DATA_DIR"),"/val-s2-italy/md.json")
+    md_json = fromJSON(md_json_path)
+    #changes
+    md_json$`eo:platform` = "sentinel-2b"
+    
+    write_json(md_json,auto_unbox = TRUE,pretty = TRUE,path=md_json_path)
+    
 }
 
 # Uganda download and preparation ----
@@ -240,12 +294,20 @@ if (data_uganda) {
                      "782f5fbc-29ae-46c2-bd39-c9971ddbb241")
     
     prepareSentinel2Collection(name="val-s2-uganda",
-                               title="Validation data set Uganda (Sentinel-2A MSI L2A)",
-                               description="Sentinel-2A MSI L2A data set for the validation service",
+                               title="Validation data set Uganda (Sentinel-2B MSI L2A)",
+                               description="Sentinel-2B MSI L2A data set for the validation service",
                                epsg=32635,
                                uuids=uganda_uuids,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/uganda"),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-uganda"))
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-uganda"),
+                               processing_level = "L2A")
+    
+    md_json_path = paste0(Sys.getenv("DATA_DIR"),"/val-s2-uganda/md.json")
+    md_json = fromJSON(md_json_path)
+    #changes
+    md_json$`eo:platform` = "sentinel-2b"
+    
+    write_json(md_json,auto_unbox = TRUE,pretty = TRUE,path=md_json_path)
 }
 
 # Switzerland download and preparation ----
@@ -261,7 +323,8 @@ if (data_switzerland) {
                                epsg=32632,
                                uuids=switzerland_uuids,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/switzerland"),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-switzerland"))
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-switzerland"),
+                               processing_level = "L2A")
 }
 
 # Island download and preparation ----
@@ -277,5 +340,23 @@ if (data_island) {
                                epsg=32627,
                                uuids=island_uuids,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/island"),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-island"))
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-island"),
+                               processing_level = "L2A")
+}
+
+# Venezuela download and preparation ----
+if (data_venezuela) {
+    venezuela_uuids = c("ea6c82a8-4d7e-4591-83e9-8d0df2d95836", 
+                        "29db6674-3f20-4c8f-a812-9b27fab32d6c", 
+                        "1d40958a-4f13-41ec-8643-e9758a21a2ff", 
+                        "bea90e72-a69f-458f-9e3b-1e3e5dbfd144")
+    
+    prepareSentinel2Collection(name="val-s2-venezuela",
+                               title="Validation data set Venezuela (Sentinel-2A MSI L1C)",
+                               description="Sentinel-2A MSI L1C data set for the validation service for a region in Venezuela.",
+                               epsg=32619,
+                               uuids=venezuela_uuids,
+                               tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/venezuela"),
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/val-s2-venezuela"),
+                               processing_level = "L1C")
 }
