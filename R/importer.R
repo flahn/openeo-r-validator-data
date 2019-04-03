@@ -26,6 +26,9 @@ if (is.na(data_venezuela)) data_venezuela = FALSE
 data_netherlands = as.logical(Sys.getenv("DATA_NETHERLANDS"))
 if (is.na(data_netherlands)) data_netherlands = FALSE
 
+delete_tmp_files = as.logical(Sys.getenv("DELETE_TMP_FILES"))
+if (is.na(delete_tmp_files)) delete_tmp_files = FALSE
+
 # CONFIG file definition ----
 CONFIG = list(ITALY_ID = "val-s2-italy",
               ITALY_UUIDS = c("9102386a-83e2-4bad-9e46-e2dec76bd6a4",
@@ -102,12 +105,11 @@ CONFIG = list(ITALY_ID = "val-s2-italy",
               NETHERLANDS_TMP_FOLDER="netherlands")
 
 downloadCopernicusData = function(uuids,tmpfolder) {
-    if (!is.null(uuids) &&
-        length(uuids) > 0 &&
-        length(list.dirs(tmpfolder,recursive = FALSE,full.names = FALSE)) != length(uuids)) { }
+    if (is.null(uuids) || length(uuids) == 0) {
+        cat("No UUIDs specified. Skip downloading.\n")
+        return()
+    }
         
-    # TODO fetch filenames, then compare what is unpacked, if not complete -> check tmp folder, if not complete then download missing uuids
-    
     scihub_base_url = "https://scihub.copernicus.eu/dhus/odata/v1/Products('<UUID>')/$value"
     
     # download data into the tmpfolder
@@ -210,6 +212,7 @@ reprojectSpatialAggregates = function(.data, t_srs) {
                      t_srs=t_srs,
                      of="VRT",
                      dstnodata = 0,
+                     vrtnodata=0,
                      overwrite = TRUE)
         }
         return(vrt_file)
@@ -283,7 +286,6 @@ fetchFilenames = function(uuids) {
 }
 
 prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolder,dst_folder,processing_level) {
-    dst_folder = paste0(dst_folder,"/data") # add this to match the openeo R back-ends workspace 
     
     if (!dir.exists(tmpfolder)) dir.create(tmpfolder, recursive = TRUE)
     if (!dir.exists(dst_folder)) dir.create(dst_folder, recursive = TRUE)
@@ -294,7 +296,6 @@ prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolde
     
     filenames = fetchFilenames(uuids = uuids)
     unpacked_data = list.dirs(dst_folder,recursive = FALSE,full.names = FALSE)
-    
     if (!all(filenames %in% unpacked_data)) {
         downloadedData = list.files(tmpfolder) %>% sub(pattern=".zip",replacement = ".SAFE")
         remaining_uuids = names(filenames[which(!filenames %in% downloadedData)])
@@ -305,15 +306,14 @@ prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolde
     
     
 
-    zip_files = list.files(path = tmpfolder,pattern = "\\.zip$")
+    zip_files = list.files(path = tmpfolder,pattern = "\\.zip$",full.names = TRUE)
     if (length(list.dirs(dst_folder,recursive = FALSE)) < length(zip_files) &&
         length(zip_files) > 0) {
         
         unzipped_files = list.dirs(dst_folder,recursive = FALSE,full.names = FALSE) %>% sub(replacement=".zip",pattern = ".SAFE")
         
         remaining_zip_files = zip_files[which(!zip_files %in% unzipped_files)]
-            
-        if (length(remaining_zip_files > 0)){
+        if (length(remaining_zip_files) > 0){
             # sentinel data is stored in zip files
             cat("Unzipping packages... ")
             
@@ -322,9 +322,12 @@ prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolde
             sapply(remaining_zip_files,unzip, exdir=dst_folder)
             cat("[DONE]\n")
             
-            cat("Deleting downloaded files... ")
-            unlink(remaining_zip_files)
-            cat("[DONE]\n")
+            if (delete_tmp_files) {
+                cat("Deleting downloaded files... ")
+                unlink(remaining_zip_files)
+                cat("[DONE]\n")
+            }
+            
         }
         
     } else {
@@ -334,6 +337,8 @@ prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolde
     setwd(dst_folder)
     
     folders = list.dirs(recursive = FALSE,full.names = FALSE)
+    
+    if (length(folders) == 0) stop("No data found in the destination folder.")
     
     all = do.call(rbind,lapply(folders,readJP2,processing_level=processing_level)) # TODO changes in readJP2 regarding level 1C data (e.g. band order)
     
@@ -353,12 +358,14 @@ prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolde
     cat("\n[DONE]\n")
     
     # write lookup.csv ----
-    
+    cat("Writing lookup table...")
     writeLookup(lookuptable = spatials, granules = granules)
+    cat("[DONE]\n")
     
     # make a switch/case of this, take another STAC template for Level 1C data
     # download md.json and adapt collection specific settings ----
     
+    cat("Preparing STAC Metadata file...")
     md_json = switch(processing_level,
            L1C = fromJSON("https://uni-muenster.sciebo.de/s/RaIXcnRlFjDjxEi/download"),
            L2A = fromJSON("https://uni-muenster.sciebo.de/s/6gufQA5dGPeATMU/download")
@@ -372,7 +379,7 @@ prepareSentinel2Collection = function(name,title,description,epsg,uuids,tmpfolde
     }
     
     write_json(md_json,auto_unbox = TRUE,pretty = TRUE,path="md.json")
-    
+    cat("[DONE]\n")
     setwd(old.dir)
 }
 
@@ -385,9 +392,9 @@ if (data_italy) {
                                epsg=32632,
                                uuids=CONFIG$ITALY_UUIDS,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/", CONFIG$ITALY_TMP_FOLDER),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/",CONFIG$ITALY_ID),
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/data/",CONFIG$ITALY_ID),
                                processing_level = "L2A")
-    md_json_path = paste0(Sys.getenv("DATA_DIR"),"/val-s2-italy/md.json")
+    md_json_path = paste0(Sys.getenv("DATA_DIR"),"/data/val-s2-italy/md.json")
     md_json = fromJSON(md_json_path)
     #changes
     md_json$`eo:platform` = "sentinel-2b"
@@ -405,10 +412,10 @@ if (data_uganda) {
                                epsg=32635,
                                uuids=CONFIG$UGANDA_UUIDS,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/", CONFIG$UGANDA_TMP_FOLDER),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/",CONFIG$UGANDA_ID),
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/data/",CONFIG$UGANDA_ID),
                                processing_level = "L2A")
     
-    md_json_path = paste0(Sys.getenv("DATA_DIR"),"/val-s2-uganda/md.json")
+    md_json_path = paste0(Sys.getenv("DATA_DIR"),"/data/val-s2-uganda/md.json")
     md_json = fromJSON(md_json_path)
     #changes
     md_json$`eo:platform` = "sentinel-2b"
@@ -425,7 +432,7 @@ if (data_switzerland) {
                                epsg=32632,
                                uuids=CONFIG$SWITZERLAND_UUIDS,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/",CONFIG$SWITZERLAND_TMP_FOLDER),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/",CONFIG$SWITZERLAND_ID),
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/data/",CONFIG$SWITZERLAND_ID),
                                processing_level = "L2A")
 }
 
@@ -438,7 +445,7 @@ if (data_island) {
                                epsg=32627,
                                uuids=CONFIG$ISLAND_UUIDS,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/",CONFIG$ISLAND_TMP_FOLDER),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/",CONFIG$ISLAND_ID),
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/data/",CONFIG$ISLAND_ID),
                                processing_level = "L2A")
 }
 
@@ -450,7 +457,7 @@ if (data_venezuela) {
                                epsg=32619,
                                uuids=CONFIG$VENEZUELA_UUIDS,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/", CONFIG$VENEZUELA_TMP_FOLDER),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/",CONFIG$VENEZUELA_ID),
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/data/",CONFIG$VENEZUELA_ID),
                                processing_level = "L1C")
 }
 
@@ -462,6 +469,6 @@ if (data_netherlands) {
                                epsg=32631,
                                uuids=CONFIG$NETHERLANDS_UUIDS,
                                tmpfolder=paste0(Sys.getenv("DOWNLOAD_DIR"),"/", CONFIG$NETHERLANDS_TMP_FOLDER),
-                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/",CONFIG$NETHERLANDS_ID),
+                               dst_folder=paste0(Sys.getenv("DATA_DIR"),"/data/",CONFIG$NETHERLANDS_ID),
                                processing_level = "L2A")
 }

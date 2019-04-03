@@ -7,6 +7,6 @@ LABEL description="A download and preparator for the openEO validator data that 
 RUN mkdir -p /opt/dockerfiles/ && mkdir -p /var/openeo/tmp/ && mkdir -p /var/openeo/data/
 
 ENV DOWNLOAD_DIR=/var/openeo/tmp 
-ENV DATA_DIR=/var/openeo/data
+ENV DATA_DIR=/var/openeo
 
 COPY ./R/importer.R /opt/dockerfiles/importer.R
