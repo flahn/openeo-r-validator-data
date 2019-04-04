@@ -228,6 +228,7 @@ createSpatialAggregates = function(.data) {
             gdalbuildvrt(paste0(getwd(),"/",data$file),
                          filename,
                          srcnodata = 0,
+                         resolution="highest",
                          vrtnodata = 0)
             
             return(filename)
@@ -255,7 +256,10 @@ createGranuleAggregates = function(.data) {
                 arrange(band_index) %>% 
                 dplyr::select(vrt) %>% 
                 unlist() %>% 
-                gdalbuildvrt(filename,separate=TRUE,vrtnodata = 0)
+                gdalbuildvrt(filename,
+                             separate=TRUE,
+                             resolution="highest",
+                             vrtnodata = 0)
             
             return(filename)
         }),
